@@ -4,6 +4,12 @@ version = "0.1.0"
 authors = ["Mark Melczer <melczer7@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+actix-web = "2.0.0"
+actix-rt = "1.1.1"
+
+[profile.dev]
+opt-level = 3
+
+[profile.test]
+opt-level = 3
