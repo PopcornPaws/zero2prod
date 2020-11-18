@@ -26,6 +26,9 @@ env_logger = "0.8.1"
 sqlx = { version = "0.4.0-beta.1", default-features = false, features = ["runtime-tokio", "macros", "postgres", "uuid", "chrono", "migrate"] }
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1.21"
+tracing-bunyan-formatter = "0.1.7"
+tracing-futures = "0.2.4"
+tracing-subscriber = { version = "0.2.15", features = ["registry", "env-filter"] }
 uuid = { version = "0.8.1", features = ["v4"] }
 
 [dev-dependencies]
