@@ -4,3 +4,12 @@ version = "0.0.1"
 authors = ["PopcornPaws <lipschitz77@gmail.com>"]
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "zero2prod"
+
+[dependencies]
+rocket = "0.5.0-rc.1"
