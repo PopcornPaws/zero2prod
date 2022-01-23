@@ -5,6 +5,11 @@ use rocket::{Build, Rocket};
 
 const HEALTH_CHECK_RESPONSE: &str = "all is well";
 
+pub struct NameEmailForm {
+    name: String,
+    email: String,
+}
+
 #[get("/hello/<name>")]
 fn greet(name: &str) -> String {
     format!("Hello {}!", name)
