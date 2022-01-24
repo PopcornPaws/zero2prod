@@ -82,9 +82,9 @@ mod test {
     #[test]
     fn invalid_subscriptions() {
         let invalid_forms = vec![
-            "name=le%20guin", // missing email
+            "name=le%20guin",                  // missing email
             "email=ursula.leguin%40gmail.com", // missing name
-            "", // missing both
+            "",                                // missing both
         ];
         let client = Client::tracked(rocket()).expect("valid rocket instance");
         for invalid in &invalid_forms {
@@ -93,7 +93,7 @@ mod test {
                 .header(ContentType::Form)
                 .body(invalid)
                 .dispatch();
-            assert_eq!(response.status(), Status::BadRequest);
+            assert_eq!(response.status(), Status::UnprocessableEntity);
         }
     }
 }
