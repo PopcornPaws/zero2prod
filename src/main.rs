@@ -78,7 +78,6 @@ mod test {
         );
     }
 
-    // TODO test failure cases with data guards.
     #[test]
     fn invalid_subscriptions() {
         let invalid_forms = vec![
