@@ -1,19 +1,42 @@
 #[macro_use]
 extern crate rocket;
 
+#[macro_use]
+extern crate diesel;
+
+mod schema;
+use schema::subscriptions;
+
+use diesel::RunQueryDsl;
 use rocket::form::{Form, FromForm};
+use rocket::response::{status::Created, Debug};
+use rocket::serde::{json::Json, Serialize};
 use rocket::{Build, Rocket};
-use rocket_sync_db_pools::{database, diesel};
+use rocket_sync_db_pools::database;
+
+use std::ops::Deref;
+
+type Result<T> = std::result::Result<T, Debug<diesel::result::Error>>;
 
 #[database("newsletter_db")]
 pub struct NewsletterDbConn(diesel::PgConnection);
 
 const HEALTH_CHECK_RESPONSE: &str = "all is well";
 
-#[derive(FromForm)]
-pub struct NameEmailForm<'a> {
-    name: &'a str,
-    email: &'a str,
+#[derive(FromForm, Insertable)]
+#[table_name = "subscriptions"]
+pub struct NameEmailForm {
+    name: String,
+    email: String,
+}
+
+#[derive(Queryable, Serialize)]
+#[serde(crate = "rocket::serde")]
+pub struct Subscription {
+    id: uuid::Uuid,
+    email: String,
+    name: String,
+    subscribed_at: chrono::DateTime<chrono::offset::Utc>,
 }
 
 #[get("/hello/<name>")]
@@ -27,8 +50,21 @@ fn health_check() -> &'static str {
 }
 
 #[post("/subscribe", data = "<form>")]
-fn subscribe(form: Form<NameEmailForm>) -> String {
-    format!("{}, {}", form.name, form.email)
+async fn subscribe(
+    db_conn: NewsletterDbConn,
+    form: Form<NameEmailForm>,
+) -> Result<Created<Json<Subscription>>> {
+    let result: Result<Subscription> = db_conn
+        .run(move |conn| {
+            diesel::insert_into(subscriptions::table)
+                .values(form.deref())
+                .get_result(conn)
+        })
+        .await?;
+
+    result.map(|value| {
+        Created::new("/").body(Json(value))
+    })
 }
 
 #[launch]
