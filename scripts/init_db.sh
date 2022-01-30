@@ -34,7 +34,9 @@ done
 >&2 echo "Postgres is up and running on port ${DB_PORT}!"
 
 export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}
-sqlx database create
-sqlx migrate run
+export ROCKET_DATABASES={newsletter_db={url="${DATABASE_URL}"}}
+
+diesel setup
+diesel migration run
 
 >&2 echo "Postgres has been migrated, ready to go!"

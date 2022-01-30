@@ -13,3 +13,8 @@ name = "zero2prod"
 
 [dependencies]
 rocket = "0.5.0-rc.1"
+
+[dependencies.rocket_sync_db_pools]
+version = "0.1.0-rc.1"
+default_features = false
+features = ["diesel_postgres_pool"]

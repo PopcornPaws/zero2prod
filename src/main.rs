@@ -3,6 +3,10 @@ extern crate rocket;
 
 use rocket::form::{Form, FromForm};
 use rocket::{Build, Rocket};
+use rocket_sync_db_pools::{database, diesel};
+
+#[database("newsletter_db")]
+pub struct NewsletterDbConn(diesel::PgConnection);
 
 const HEALTH_CHECK_RESPONSE: &str = "all is well";
 
@@ -29,7 +33,9 @@ fn subscribe(form: Form<NameEmailForm>) -> String {
 
 #[launch]
 fn rocket() -> Rocket<Build> {
-    rocket::build().mount("/", routes![greet, health_check, subscribe])
+    rocket::build()
+        .mount("/", routes![greet, health_check, subscribe])
+        .attach(NewsletterDbConn::fairing())
 }
 
 #[cfg(test)]
