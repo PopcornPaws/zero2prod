@@ -13,7 +13,7 @@ name = "zero2prod"
 
 [dependencies]
 chrono = { version = "0.4.19", features = ["serde"] }
-diesel = { version = "1.4.8", features = ["postgres"] }
+diesel = { version = "1.4.8", features = ["postgres", "chrono", "uuidv07"] }
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 
@@ -21,3 +21,6 @@ uuid = { version = "0.8.2", features = ["serde", "v4"] }
 version = "0.1.0-rc.1"
 default_features = false
 features = ["diesel_postgres_pool"]
+
+[dev-dependencies]
+serde_json = "1.0"

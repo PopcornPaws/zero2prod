@@ -10,33 +10,46 @@ use schema::subscriptions;
 use diesel::RunQueryDsl;
 use rocket::form::{Form, FromForm};
 use rocket::response::{status::Created, Debug};
-use rocket::serde::{json::Json, Serialize};
+use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::{Build, Rocket};
 use rocket_sync_db_pools::database;
 
-use std::ops::Deref;
-
 type Result<T> = std::result::Result<T, Debug<diesel::result::Error>>;
+type Timestamp = chrono::DateTime<chrono::offset::Utc>;
 
 #[database("newsletter_db")]
 pub struct NewsletterDbConn(diesel::PgConnection);
 
 const HEALTH_CHECK_RESPONSE: &str = "all is well";
 
-#[derive(FromForm, Insertable)]
-#[table_name = "subscriptions"]
+#[derive(FromForm, Deserialize, Serialize, Clone, Debug)]
+#[serde(crate = "rocket::serde")]
 pub struct NameEmailForm {
-    name: String,
-    email: String,
+    pub name: String,
+    pub email: String,
 }
 
-#[derive(Queryable, Serialize)]
+#[derive(Insertable, Queryable, Serialize, Clone, Debug)]
 #[serde(crate = "rocket::serde")]
+#[table_name = "subscriptions"]
 pub struct Subscription {
-    id: uuid::Uuid,
-    email: String,
-    name: String,
-    subscribed_at: chrono::DateTime<chrono::offset::Utc>,
+    pub id: uuid::Uuid,
+    pub email: String,
+    pub name: String,
+    pub subscribed_at: Timestamp,
+}
+
+impl From<NameEmailForm> for Subscription {
+    fn from(form: NameEmailForm) -> Self {
+        let uuid = uuid::Uuid::new_v4();
+        let utc = chrono::offset::Utc::now();
+        Self {
+            id: uuid,
+            email: form.email,
+            name: form.name,
+            subscribed_at: utc,
+        }
+    }
 }
 
 #[get("/hello/<name>")]
@@ -53,30 +66,37 @@ fn health_check() -> &'static str {
 async fn subscribe(
     db_conn: NewsletterDbConn,
     form: Form<NameEmailForm>,
-) -> Result<Created<Json<Subscription>>> {
-    let result: Result<Subscription> = db_conn
+) -> Result<Created<Json<NameEmailForm>>> {
+    let form_value = form.clone(); // TODO why the double clone is needed?
+    db_conn
         .run(move |conn| {
             diesel::insert_into(subscriptions::table)
-                .values(form.deref())
-                .get_result(conn)
+                .values(Subscription::from(form_value))
+                .execute(conn)
         })
         .await?;
 
-    result.map(|value| {
-        Created::new("/").body(Json(value))
-    })
+    Ok(Created::new("/").body(Json(form.clone()))) // TODO why the double clone
+}
+
+#[delete("/")]
+async fn destroy(db_conn: NewsletterDbConn) -> Result<()> {
+    db_conn
+        .run(move |conn| diesel::delete(subscriptions::table).execute(conn))
+        .await?;
+    Ok(())
 }
 
 #[launch]
 fn rocket() -> Rocket<Build> {
     rocket::build()
-        .mount("/", routes![greet, health_check, subscribe])
+        .mount("/", routes![greet, health_check, subscribe, destroy])
         .attach(NewsletterDbConn::fairing())
 }
 
 #[cfg(test)]
 mod test {
-    use super::{rocket, HEALTH_CHECK_RESPONSE};
+    use super::{rocket, HEALTH_CHECK_RESPONSE, NameEmailForm};
     use rocket::http::{ContentType, Status};
     use rocket::local::blocking::Client;
 
@@ -113,11 +133,12 @@ mod test {
             .header(ContentType::Form)
             .body(body)
             .dispatch();
-        assert_eq!(response.status(), Status::Ok);
-        assert_eq!(
-            response.into_string().unwrap(),
-            "le guin, ursula.leguin@gmail.com"
-        );
+        assert_eq!(response.status(), Status::Created);
+        let subscribed: NameEmailForm =
+            serde_json::from_str(&response.into_string().unwrap()).unwrap();
+        assert_eq!(subscribed.name, "le guin");
+        assert_eq!(subscribed.email, "ursula.leguin@gmail.com");
+        client.delete("/").dispatch(); // remove inserted entry for reproducibility
     }
 
     #[test]

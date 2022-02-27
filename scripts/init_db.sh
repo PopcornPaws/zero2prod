@@ -33,8 +33,10 @@ done
 
 >&2 echo "Postgres is up and running on port ${DB_PORT}!"
 
-export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}
-export ROCKET_DATABASES={newsletter_db={url="${DATABASE_URL}"}}
+DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}
+ROCKET_DATABASES={newsletter_db={url="${DATABASE_URL}"}}
+echo -e "DATABASE_URL=${DATABASE_URL}" > .env
+echo -e "ROCKET_DATABASES=${ROCKET_DATABASES}" > Rocket.toml
 
 diesel setup
 diesel migration run
