@@ -12,9 +12,10 @@ use rocket::form::{Form, FromForm};
 use rocket::response::{status::Created, Debug};
 use rocket::serde::{json::Json, Serialize};
 use rocket::{Build, Rocket};
-use rocket_contrib::uuid::Uuid as RocketUuid;
 use rocket_sync_db_pools::database;
 use uuid::Uuid;
+
+use std::str::FromStr;
 
 type Result<T> = std::result::Result<T, Debug<diesel::result::Error>>;
 
@@ -87,11 +88,12 @@ async fn subscribe(
 #[delete("/<id>")]
 async fn delete(
     db_conn: NewsletterDbConn,
-    id: RocketUuid,
+    id: String,
 ) -> Result<Option<()>> {
+    let uuid = Uuid::from_str(&id).map_err(|e| e.to_string())?;
     let affected = db_conn.run(move |conn| {
         diesel::delete(subscriptions::table)
-            .filter(subscriptions::id.eq(id.into_inner()))
+            .filter(subscriptions::id.eq(uuid))
             .execute(conn)
     }).await?;
     Ok((affected == 1).then(|| ()))
