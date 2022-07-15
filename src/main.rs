@@ -7,14 +7,14 @@ extern crate diesel;
 mod schema;
 use schema::subscriptions;
 
-use diesel::RunQueryDsl;
+use diesel::{ExpressionMethods, RunQueryDsl, QueryDsl};
 use rocket::form::{Form, FromForm};
 use rocket::response::{status::Created, Debug};
 use rocket::serde::{json::Json, Serialize};
 use rocket::{Build, Rocket};
+use rocket_contrib::uuid::Uuid as RocketUuid;
 use rocket_sync_db_pools::database;
-
-use std::ops::Deref;
+use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Debug<diesel::result::Error>>;
 
@@ -23,17 +23,17 @@ pub struct NewsletterDbConn(diesel::PgConnection);
 
 const HEALTH_CHECK_RESPONSE: &str = "all is well";
 
-#[derive(FromForm, Insertable)]
-#[table_name = "subscriptions"]
+#[derive(FromForm)]
 pub struct NameEmailForm {
     name: String,
     email: String,
 }
 
-#[derive(Queryable, Serialize)]
+#[derive(Insertable, Queryable, Serialize, Clone)]
+#[table_name = "subscriptions"]
 #[serde(crate = "rocket::serde")]
 pub struct Subscription {
-    id: uuid::Uuid,
+    id: Uuid,
     email: String,
     name: String,
     subscribed_at: chrono::DateTime<chrono::offset::Utc>,
@@ -49,22 +49,52 @@ fn health_check() -> &'static str {
     HEALTH_CHECK_RESPONSE
 }
 
+#[get("/")]
+async fn list(
+    db_conn: NewsletterDbConn,
+) -> Result<Json<Vec<Uuid>>> {
+    let ids: Vec<Uuid> = db_conn.run( move |conn| {
+        subscriptions::table
+            .select(subscriptions::id)
+            .load(conn)
+    }).await?;
+
+    Ok(Json(ids))
+}
+
 #[post("/subscribe", data = "<form>")]
 async fn subscribe(
     db_conn: NewsletterDbConn,
     form: Form<NameEmailForm>,
-) -> Result<Created<Json<Subscription>>> {
-    let result: Result<Subscription> = db_conn
+) -> Result<Created<Json<[String; 2]>>> {
+    let subscription = Subscription {
+        id: Uuid::new_v4(),
+        email: form.email.clone(),
+        name: form.name.clone(),
+        subscribed_at: chrono::offset::Utc::now(),
+    };
+    db_conn
         .run(move |conn| {
             diesel::insert_into(subscriptions::table)
-                .values(form.deref())
-                .get_result(conn)
+                .values(&subscription)
+                .execute(conn)
         })
         .await?;
 
-    result.map(|value| {
-        Created::new("/").body(Json(value))
-    })
+    Ok(Created::new("/").body(Json([form.name.clone(), form.email.clone()])))
+}
+
+#[delete("/<id>")]
+async fn delete(
+    db_conn: NewsletterDbConn,
+    id: RocketUuid,
+) -> Result<Option<()>> {
+    let affected = db_conn.run(move |conn| {
+        diesel::delete(subscriptions::table)
+            .filter(subscriptions::id.eq(id.into_inner()))
+            .execute(conn)
+    }).await?;
+    Ok((affected == 1).then(|| ()))
 }
 
 #[launch]
@@ -113,11 +143,16 @@ mod test {
             .header(ContentType::Form)
             .body(body)
             .dispatch();
-        assert_eq!(response.status(), Status::Ok);
+        // TODO delete posts after creating a new subscription
+        // so that the test can be run again
+        //let ids = client.get("/").dispatch();
+        //println!("{:?}", ids);
+        assert_eq!(response.status(), Status::Created);
         assert_eq!(
             response.into_string().unwrap(),
-            "le guin, ursula.leguin@gmail.com"
+            "[\"le guin\", \"ursula.leguin@gmail.com\"]"
         );
+
     }
 
     #[test]

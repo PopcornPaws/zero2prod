@@ -1,0 +1,3 @@
+[default.databases.newsletter_db]
+url = "postgres://postgres:password@localhost:5432/newsletter"
+timeout = 5
