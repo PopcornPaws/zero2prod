@@ -9,3 +9,7 @@ opt-level = 3
 
 [profile.test]
 opt-level = 3
+
+[dependencies]
+actix-web = "4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
