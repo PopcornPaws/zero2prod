@@ -16,6 +16,7 @@ opt-level = 3
 [dependencies]
 actix-web = "4"
 serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.5.7", default-features = false, features = ["runtime-actix-rustls", "macros", "postgres", "uuid", "chrono", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
