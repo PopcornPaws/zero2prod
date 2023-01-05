@@ -1,6 +1,6 @@
-mod configuration;
-mod routes;
-mod startup;
+pub mod configuration;
+pub mod routes;
+pub mod startup;
 
 use routes::*;
 
