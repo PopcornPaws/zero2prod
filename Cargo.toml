@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["lipschitz <lipschitz77@gmail.com>"]
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
 [profile.dev]
 opt-level = 3
 
@@ -12,4 +15,8 @@ opt-level = 3
 
 [dependencies]
 actix-web = "4"
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+reqwest = "0.11"
