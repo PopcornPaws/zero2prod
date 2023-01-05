@@ -55,8 +55,8 @@ async fn subscribe_returns_200_for_valid_input() {
         .await
         .expect("failed to fetch subscription");
 
-    assert_eq!(subscription.email, TEST_EMAIL.strip_prefix("email="));
-    assert_eq!(subscription.name, TEST_NAME.strip_prefix("name="));
+    assert_eq!(subscription.email, TEST_EMAIL.strip_prefix("email=").unwrap());
+    assert_eq!(subscription.name, TEST_NAME.strip_prefix("name=").unwrap());
 }
 
 #[tokio::test]
