@@ -1,26 +1,60 @@
 use reqwest::StatusCode;
-use sqlx::{Connection, PgConnection};
-use zero2prod::configuration::get_configuration;
+use sqlx::{Connection, Executor, PgConnection, PgPool};
+use uuid::Uuid;
+use zero2prod::configuration::{get_config, DatabaseConfig};
 
 const TEST_EMAIL: &str = "email=ursula_le_guin%40gmail.com";
 const TEST_NAME: &str = "name=le%20guin";
+const SAVED_EMAIL: &str = "ursula_le_guin@gmail.com";
+const SAVED_NAME: &str = "le guin";
 
-fn spawn_app() -> String {
+struct TestApp {
+    address: String,
+    db_pool: PgPool,
+}
+
+async fn spawn_app() -> TestApp {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("failed to bind random port");
     let port = listener.local_addr().unwrap().port();
-    let server = zero2prod::run(listener).expect("failed to bind address");
+    let address = format!("http://127.0.0.1:{port}");
+    let mut configuration = get_config().expect("failed to read configuration");
+    configuration.database.database_name = Uuid::new_v4().to_string();
+    let db_pool = configure_database(&configuration.database).await;
+
+    let server = zero2prod::run(listener, db_pool.clone()).expect("failed to bind address");
     let _ = tokio::spawn(server);
-    format!("http://127.0.0.1:{port}")
+    TestApp { address, db_pool }
+}
+
+pub async fn configure_database(config: &DatabaseConfig) -> PgPool {
+    // create database
+    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+        .await
+        .expect("failed to connect to postgres");
+    connection
+        .execute(format!("CREATE DATABASE \"{}\";", config.database_name).as_str())
+        .await
+        .expect("failed to create database");
+    // migrate database
+    let connection_pool = PgPool::connect(&config.connection_string())
+        .await
+        .expect("failed to connect ot postgres");
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("failed to migrate database");
+    // return the connection pool
+    connection_pool
 }
 
 #[tokio::test]
 async fn health_check_works() {
     // arrange
-    let address = spawn_app();
+    let app = spawn_app().await;
     let client = reqwest::Client::new();
     // act
     let response = client
-        .get(&format!("{address}/health_check"))
+        .get(&format!("{}/health_check", app.address))
         .send()
         .await
         .expect("failed to execute request");
@@ -32,16 +66,12 @@ async fn health_check_works() {
 #[tokio::test]
 async fn subscribe_returns_200_for_valid_input() {
     // arrange
-    let address = spawn_app();
-    let configuration = get_configuration().expect("failed to read configuration");
+    let app = spawn_app().await;
     let client = reqwest::Client::new();
-    let mut connection = PgConnection::connect(&configuration.database.connection_string())
-        .await
-        .expect("failed to connect to postgres");
     // act
     let body = format!("{TEST_NAME}&{TEST_EMAIL}");
     let response = client
-        .post(&format!("{address}/subscriptions"))
+        .post(&format!("{}/subscriptions", app.address))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
@@ -51,25 +81,25 @@ async fn subscribe_returns_200_for_valid_input() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let subscription = sqlx::query!("SELECT email, name FROM subscriptions")
-        .fetch_one(&mut connection)
+        .fetch_one(&app.db_pool)
         .await
         .expect("failed to fetch subscription");
 
-    assert_eq!(subscription.email, TEST_EMAIL.strip_prefix("email=").unwrap());
-    assert_eq!(subscription.name, TEST_NAME.strip_prefix("name=").unwrap());
+    assert_eq!(subscription.email, SAVED_EMAIL);
+    assert_eq!(subscription.name, SAVED_NAME);
 }
 
 #[tokio::test]
 async fn subscribe_returns_400_for_missing_input() {
     // arrange
-    let address = spawn_app();
+    let app = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = vec![
         (TEST_NAME, "missing email"),
         (TEST_EMAIL, "missing name"),
         ("", "missing email and name"),
     ];
-    let endpoint = format!("{address}/subscriptions");
+    let endpoint = format!("{}/subscriptions", app.address);
     // act
     for (invalid_body, error_message) in test_cases {
         let response = client
