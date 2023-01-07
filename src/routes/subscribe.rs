@@ -2,7 +2,6 @@ use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::PgPool;
-use tracing::Instrument;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -11,18 +10,25 @@ pub struct FormData {
     name: String,
 }
 
-pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> HttpResponse {
-    let request_id = Uuid::new_v4();
-    let request_span = tracing::info_span!(
-        "adding new subscriber",
-        %request_id,
+#[tracing::instrument(
+    name = "adding new subscriber",
+    skip(form, pool),
+    fields(
         subscriber_email = %form.email,
         subscriber_name = %form.name
-    );
-    let _request_span_guard = request_span.enter();
+    )
 
-    let query_span = tracing::info_span!("saving new subscriber to database");
-    match sqlx::query!(
+)]
+pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> HttpResponse {
+    match insert_subscriber(&pool, &form).await {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+#[tracing::instrument(name = "saving new subscriber", skip(form, pool))]
+async fn insert_subscriber(pool: &PgPool, form: &FormData) -> Result<(), sqlx::Error> {
+    sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at)
         VALUES($1, $2, $3, $4)
@@ -32,17 +38,11 @@ pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> Ht
         form.name,
         Utc::now()
     )
-    .execute(pool.get_ref())
-    .instrument(query_span)
+    .execute(pool)
     .await
-    {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(err) => {
-            tracing::error!(
-                "request id: {} - failed to subscribe user: {err:?}",
-                request_id
-            );
-            HttpResponse::InternalServerError().finish()
-        }
-    }
+    .map_err(|err| {
+        tracing::error!("failed to execute query: {:?}", err);
+        err
+    })?;
+    Ok(())
 }

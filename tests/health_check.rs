@@ -1,7 +1,13 @@
 use reqwest::StatusCode;
+use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::configuration::{get_config, DatabaseConfig};
+use zero2prod::telemetry::{get_subscriber, init_subscriber};
+
+use std::sync::Once;
+
+static TRACING: Once = Once::new();
 
 const TEST_EMAIL: &str = "email=ursula_le_guin%40gmail.com";
 const TEST_NAME: &str = "name=le%20guin";
@@ -13,7 +19,20 @@ struct TestApp {
     db_pool: PgPool,
 }
 
+#[allow(clippy::let_underscore_future)]
 async fn spawn_app() -> TestApp {
+    TRACING.call_once(|| {
+        let subscriber_name = "test".to_string();
+        let default_filter_level = "debug".to_string();
+        if std::env::var("TEST_LOG").is_ok() {
+            let subscriber = get_subscriber(subscriber_name, default_filter_level, std::io::stdout);
+            init_subscriber(subscriber);
+        } else {
+            let subscriber = get_subscriber(subscriber_name, default_filter_level, std::io::sink);
+            init_subscriber(subscriber);
+        }
+    });
+
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{port}");
@@ -21,22 +40,24 @@ async fn spawn_app() -> TestApp {
     configuration.database.database_name = Uuid::new_v4().to_string();
     let db_pool = configure_database(&configuration.database).await;
 
-    let server = zero2prod::run(listener, db_pool.clone()).expect("failed to bind address");
+    let server =
+        zero2prod::startup::run(listener, db_pool.clone()).expect("failed to bind address");
     let _ = tokio::spawn(server);
     TestApp { address, db_pool }
 }
 
 pub async fn configure_database(config: &DatabaseConfig) -> PgPool {
     // create database
-    let mut connection = PgConnection::connect(&config.connection_string_without_db())
-        .await
-        .expect("failed to connect to postgres");
+    let mut connection =
+        PgConnection::connect(config.connection_string_without_db().expose_secret())
+            .await
+            .expect("failed to connect to postgres");
     connection
         .execute(format!("CREATE DATABASE \"{}\";", config.database_name).as_str())
         .await
         .expect("failed to create database");
     // migrate database
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect(config.connection_string().expose_secret())
         .await
         .expect("failed to connect ot postgres");
     sqlx::migrate!("./migrations")
@@ -71,7 +92,7 @@ async fn subscribe_returns_200_for_valid_input() {
     // act
     let body = format!("{TEST_NAME}&{TEST_EMAIL}");
     let response = client
-        .post(&format!("{}/subscriptions", app.address))
+        .post(&format!("{}/subscribe", app.address))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
@@ -99,7 +120,7 @@ async fn subscribe_returns_400_for_missing_input() {
         (TEST_EMAIL, "missing name"),
         ("", "missing email and name"),
     ];
-    let endpoint = format!("{}/subscriptions", app.address);
+    let endpoint = format!("{}/subscribe", app.address);
     // act
     for (invalid_body, error_message) in test_cases {
         let response = client

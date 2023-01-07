@@ -1,5 +1,4 @@
 pub mod configuration;
 pub mod routes;
-mod startup;
-
-pub use startup::run;
+pub mod startup;
+pub mod telemetry;
